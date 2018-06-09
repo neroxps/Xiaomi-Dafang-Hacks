@@ -11,7 +11,6 @@ fi
 
 # Save a snapshot
 if [ "$save_snapshot" = true ] ; then
-	save_dir=/system/sdcard/motion/stills
 	filename=$(date +%d-%m-%Y_%H.%M.%S).jpg
 	if [ ! -d "$save_dir" ]; then
 		mkdir -p $save_dir
@@ -36,4 +35,12 @@ fi
 # Send emails ...
 if [ "$sendemail" = true ] ; then
     /system/sdcard/scripts/sendPictureMail.sh&
+fi
+
+# Run any user scripts.
+if [ -f /system/sdcard/config/userscripts/motiondetection/* ]; then
+    for i in /system/sdcard/config/userscripts/motiondetection/*; do
+        echo "Running: $i on"
+        $i on
+    done
 fi
