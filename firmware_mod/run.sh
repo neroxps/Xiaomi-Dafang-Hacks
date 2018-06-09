@@ -1,5 +1,7 @@
 #!/bin/sh
 
+export LD_LIBRARY_PATH='/system/sdcard/lib/:/thirdlib:/system/lib'
+
 CONFIGPATH="/system/sdcard/config"
 LOGDIR="/system/sdcard/log"
 LOGPATH="$LOGDIR/startup.log"
@@ -49,8 +51,13 @@ if [ ! -f $CONFIGPATH/wpa_supplicant.conf ]; then
 fi
 MAC=$(grep MAC < /params/config/.product_config | cut -c16-27 | sed 's/\(..\)/\1:/g;s/:$//')
 if [ -f /driver/8189es.ko ]; then
+  # Its a DaFang
   insmod /driver/8189es.ko rtw_initmac="$MAC"
+elif [ -f /driver/8189fs.ko ]; then
+  # Its a XiaoFang T20
+  insmod /driver/8189fs.ko rtw_initmac="$MAC"
 else
+  # Its a Wyzecam V2
   insmod /driver/rtl8189ftv.ko rtw_initmac="$MAC"
 fi
 wpa_supplicant_status="$(wpa_supplicant -B -i wlan0 -c $CONFIGPATH/wpa_supplicant.conf -P /var/run/wpa_supplicant.pid)"
@@ -86,7 +93,7 @@ yellow_led off
 blue_led on
 
 ## Load motor driver module:
-insmod /system/sdcard/driver/sample_motor.ko
+insmod /driver/sample_motor.ko
 # Don't calibrate the motors for now as for newer models the endstops don't work:
 # motor hcalibrate
 # motor vcalibrate
@@ -95,9 +102,16 @@ insmod /system/sdcard/driver/sample_motor.ko
 # motor calibrate
 
 ## Start Sensor:
-insmod /system/sdcard/driver/tx-isp.ko isp_clk=100000000
-insmod /system/sdcard/driver/sensor_jxf22.ko data_interface=2 pwdn_gpio=-1 reset_gpio=18 sensor_gpio_func=0
-insmod /system/sdcard/driver/sinfo
+insmod /driver/tx-isp.ko isp_clk=100000000
+if [ -f /driver/sensor_jxf23.ko ]; then
+  # Its a Xioafang 1S
+  insmod /driver/sensor_jxf23.ko data_interface=2 pwdn_gpio=-1 reset_gpio=18 sensor_gpio_func=0
+else
+  # Its a Dafang Classic/Wyzecam V2
+  insmod /driver/sensor_jxf22.ko data_interface=2 pwdn_gpio=-1 reset_gpio=18 sensor_gpio_func=0
+fi
+insmod /system/sdcard/driver/sinfo.ko
+
 
 ## Start FTP & SSH Server:
 dropbear_status=$(/system/sdcard/bin/dropbearmulti dropbear -R)

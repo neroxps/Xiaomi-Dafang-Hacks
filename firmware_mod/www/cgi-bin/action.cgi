@@ -10,6 +10,7 @@ source /system/sdcard/scripts/common_functions.sh
 
 export LD_LIBRARY_PATH=/system/lib
 export LD_LIBRARY_PATH=/thirdlib:$LD_LIBRARY_PATH
+
 if [ -n "$F_cmd" ]; then
   if [ -z "$F_val" ]; then
     F_val=100
@@ -34,12 +35,45 @@ if [ -n "$F_cmd" ]; then
           echo "Contents of v4l2rtspserver-master.log<br/>"
           cat /system/sdcard/log/v4l2rtspserver-master.log
           ;;
+        5)
+          echo "Contents of update.log <br/>"
+          cat /var/log/update.log
+          ;;
 
       esac
       echo "</pre>"
       return
     ;;
-
+    clearlog)
+      echo "<pre>"
+      case "${F_logname}" in
+        "" | 1)
+            echo "Summary of all log files cleared<br/>"
+            for i in /var/log/*
+            do
+                echo -n "" > $i
+            done
+            ;;
+        2)
+            echo "Contents of dmesg cleared<br/>"
+            /bin/dmesg -c > /dev/null
+            ;;
+        3)
+            echo "Contents of logcat cleared<br/>"
+            /system/bin/logcat -c
+            ;;
+        4)
+          echo "Contents of v4l2rtspserver-master.log cleared<br/>"
+          echo -n "" > /system/sdcard/log/v4l2rtspserver-master.log
+          ;;
+        5)
+          echo "Contents of update.log cleared <br/>"
+          echo -n "" > /var/log/update.log
+         ;;
+      esac
+      echo "</pre>"
+      return
+    ;;
     reboot)
       echo "Rebooting device..."
       /sbin/reboot
@@ -153,7 +187,13 @@ if [ -n "$F_cmd" ]; then
     ;;
 
     audio_test)
-      /system/sdcard/bin/ossplay /usr/share/notify/CN/init_ok.wav
+          F_audioSource=$(printf '%b' "${F_audioSource//%/\\x}")
+          if [ "$F_audioSource" == "" ]; then
+              F_audioSource="/usr/share/notify/CN/init_ok.wav"
+          fi
+          /system/sdcard/bin/busybox nohup /system/sdcard/bin/audioplay $F_audioSource $F_audiotestVol >> "/var/log/update.log" &
+          echo  "Play $F_audioSource at volume $F_audiotestVol"
+          return
     ;;
 
     h264_start)
@@ -325,9 +365,17 @@ if [ -n "$F_cmd" ]; then
 
     set_video_size)
       video_size=$(echo "${F_video_size}"| sed -e 's/+/ /g')
+      video_format=$(printf '%b' "${F_video_format/%/\\x}")
+      brbitrate=$(printf '%b' "${F_brbitrate/%/\\x}")
+
       rewrite_config /system/sdcard/config/rtspserver.conf RTSPH264OPTS "\"$video_size\""
       rewrite_config /system/sdcard/config/rtspserver.conf RTSPMJPEGOPTS "\"$video_size\""
+      rewrite_config /system/sdcard/config/rtspserver.conf BITRATE "$brbitrate"
+      rewrite_config /system/sdcard/config/rtspserver.conf VIDEOFORMAT "$video_format"
+
       echo "Video resolution set to $video_size<br/>"
+      echo "Bitrate set to $brbitrate<br/>"
+      echo "Video format set to $video_format<br/>"
       if [ "$(rtsp_h264_server status)" = "ON" ]; then
         rtsp_h264_server off
         rtsp_h264_server on
@@ -336,6 +384,7 @@ if [ -n "$F_cmd" ]; then
         rtsp_mjpeg_server off
         rtsp_mjpeg_server on
       fi
+      return
     ;;
 
     set_region_of_interest)
@@ -352,10 +401,6 @@ if [ -n "$F_cmd" ]; then
             /system/sdcard/bin/setconf -k t -v on
         fi
 
-        # echo "region_of_interest=${F_x0},${F_y0},${F_x1},${F_y1}" >  /system/sdcard/config/motion.conf
-        # echo "motion_sensitivity=${F_motion_sensitivity}" >>  /system/sdcard/config/motion.conf
-        # echo "motion_indicator_color=${F_motion_indicator_color}" >>  /system/sdcard/config/motion.conf
-
         /system/sdcard/bin/setconf -k r -v ${F_x0},${F_y0},${F_x1},${F_y1}
         /system/sdcard/bin/setconf -k m -v ${F_motion_sensitivity}
         /system/sdcard/bin/setconf -k z -v ${F_motion_indicator_color}
@@ -364,26 +409,13 @@ if [ -n "$F_cmd" ]; then
         # Changed the detection region, need to restart the server
         if [ ${F_restart_server} == "1" ]
         then
-
-            processName="v4l2rtspserver-master"
-            #get the process pid
-            processId=`ps | grep ${processName} | grep -v grep | awk '{ printf $1 }'`
-            if [ "${processId}X" != "X" ]
-            then
-                    #found the process, now get the full path and the parameters in order to restart it
-                    executable=`ls -l /proc/${processId}/exe | awk '{print $NF}'`
-                    cmdLine=`tr '\0' ' ' < /proc/${processId}/cmdline | awk '{$1=""}1'`
-                    kill ${processId} 2>/dev/null
-
-                    # Set the socket option in order to restart easily the server (socket in use)
-                    echo 1 > /proc/sys/net/ipv4/tcp_tw_recycle
-
-                    sleep 2
-                    cmdLine="/system/sdcard/bin/busybox nohup "${executable}${cmdLine} 2>/dev/null
-                    ${cmdLine}  2>/dev/null >/dev/null &
-
-            else
-                    echo "<p>process v4l2rtspserver-master was not found</p>"
+            if [ "$(rtsp_h264_server status)" = "ON" ]; then
+                rtsp_h264_server off
+                rtsp_h264_server on
+            fi
+            if [ "$(rtsp_mjpeg_server status)" = "ON" ]; then
+                rtsp_mjpeg_server off
+                rtsp_mjpeg_server on
             fi
         fi
 
@@ -417,7 +449,65 @@ if [ -n "$F_cmd" ]; then
       fi
       return
     ;;
+    conf_audioin)
 
+       audioinFormat=$(echo $F_audioinFormat | awk -F"-" '{print $1}')
+       audioinBR=$(echo $F_audioinFormat | awk -F"-" '{print $2}')
+       if [ "$audioinBR" == "" ]; then
+            audioinBR="8000"
+       fi
+       if [ "$audioinFormat" == "OPUS" ]; then
+            audioinBR="48000"
+       fi
+
+       rewrite_config /system/sdcard/config/rtspserver.conf AUDIOFORMAT "$audioinFormat"
+       rewrite_config /system/sdcard/config/rtspserver.conf AUDIOOUTBR "$audioinBR"
+       rewrite_config /system/sdcard/config/rtspserver.conf FILTER "$F_audioinFilter"
+       rewrite_config /system/sdcard/config/rtspserver.conf HIGHPASSFILTER "$F_HFEnabled"
+       rewrite_config /system/sdcard/config/rtspserver.conf HWVOLUME "$F_audioinVol"
+       rewrite_config /system/sdcard/config/rtspserver.conf SWVOLUME "-1"
+
+
+       echo "Audio format $audioinFormat <BR>"
+       echo "Audio bitrate $audioinBR <BR>"
+       echo "Filter $F_audioinFilter <BR>"
+       echo "High Pass Filter $F_HFEnabled <BR>"
+       echo  "Volume $F_audioinVol <BR>"
+       /system/sdcard/bin/setconf -k q -v "$F_audioinFilter" 2>/dev/null
+       /system/sdcard/bin/setconf -k l -v "$F_HFEnabled" 2>/dev/null
+       /system/sdcard/bin/setconf -k h -v "$F_audioinVol" 2>/dev/null
+       return
+     ;;
+     update)
+        processId=$(ps | grep autoupdate.sh | grep -v grep)
+        if [ "$processId" == "" ]
+        then
+            echo "===============" >> /var/log/update.log
+            date >> /var/log/update.log
+            if [ "$F_login" != "" ]; then
+                /system/sdcard/bin/busybox nohup /system/sdcard/autoupdate.sh -s -v -f -u $F_login  >> "/var/log/update.log" &
+            else
+                /system/sdcard/bin/busybox nohup /system/sdcard/autoupdate.sh -s -v -f >> "/var/log/update.log" &
+            fi
+            processId=$(ps | grep autoupdate.sh | grep -v grep)
+        fi
+        echo $processId
+        return
+      ;;
+     show_updateProgress)
+        processId=$(ps | grep autoupdate.sh | grep -v grep)
+        if [ "$processId" == "" ]
+        then
+            echo -n -1
+        else
+            if [ -f /tmp/progress ] ; then
+                cat /tmp/progress
+            else
+                echo -n 0
+            fi
+        fi
+        return
+        ;;
    *)
     echo "Unsupported command '$F_cmd'"
     ;;
