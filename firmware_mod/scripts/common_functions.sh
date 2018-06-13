@@ -374,8 +374,8 @@ auto_night_mode(){
 # Update axis
 update_axis(){
   source /system/sdcard/config/osd.conf > /dev/null 2>&1
-  AXIS=`/system/sdcard/bin/motor -d s | tail +5 | awk '{printf ("%s ",$0)}' |  awk '{print "X="$2,"Y="$4}'`
-  if [ $DISPLAY_AXIS ]; then
+  AXIS=`/system/sdcard/bin/motor -d s | sed '3d' | awk '{printf ("%s ",$0)}' | awk '{print "X="$2,"Y="$4}'`
+  if [ "$DISPLAY_AXIS" == "true" ]; then
     OSD=$(echo ${OSD} | sed -r "s/X=.*$/${AXIS}/")
   fi
 }
