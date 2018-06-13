@@ -2,7 +2,7 @@
 
 ################################################
 # Created by Nero                              #
-# neroxps@gmail.com | 2018-5-28 | v0.0.6 Beta  #
+# neroxps@gmail.com | 2018-5-28 | v0.0.7 Beta  #
 ################################################
 
 source /system/sdcard/scripts/common_functions.sh
@@ -101,4 +101,10 @@ esac
 update_axis
 logger "Move end motor coordinates:$AXIS"
 /system/sdcard/bin/setconf -k o -v "$OSD"
+
+# push images to mqtt
+/system/sdcard/bin/getimage > /tmp/motor_stop.jpg
+. /system/sdcard/config/mqtt.conf
+/system/sdcard/bin/mosquitto_pub.bin -h "$HOST" -p "$PORT" -u "$USER" -P "$PASS" -t "${TOPIC}"/motor/snapshot ${MOSQUITTOOPTS} ${MOSQUITTOPUBOPTS} -f /tmp/motor_stop.jpg
+# exit
 exit_shell 0
